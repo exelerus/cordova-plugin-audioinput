@@ -35,7 +35,8 @@ import java.io.FileInputStream;
 import java.io.OutputStream;
 import java.io.IOException;
 import java.net.URI;
-import java.util.Arrays;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 
 
 public class AudioInputReceiver extends Thread {
@@ -75,7 +76,7 @@ public class AudioInputReceiver extends Thread {
 		        channelConfig = AudioFormat.CHANNEL_IN_MONO;
 		        break;
 		}
-		if(format == "PCM_8BIT") {
+		if("PCM_8BIT".equals(format)) {
 		    audioFormat = AudioFormat.ENCODING_PCM_8BIT;
 		}
 		else {
@@ -123,11 +124,19 @@ public class AudioInputReceiver extends Thread {
 
 						if (numReadBytes > 0) {
 							try {
-								String decoded = Arrays.toString(audioBuffer);
+								// Convert short array to byte array using ByteBuffer
+								ByteBuffer byteBuffer = ByteBuffer.allocate(numReadBytes * 2);
+								byteBuffer.order(ByteOrder.LITTLE_ENDIAN);
+								for (int i = 0; i < numReadBytes; i++) {
+									byteBuffer.putShort(audioBuffer[i]);
+								}
+
+								// Encode to Base64
+								String encoded = Base64.encodeToString(byteBuffer.array(), Base64.NO_WRAP);
 
 								message = handler.obtainMessage();
 								messageBundle = new Bundle();
-								messageBundle.putString("data", decoded);
+								messageBundle.putString("data", encoded);
 								message.setData(messageBundle);
 								handler.sendMessage(message);
 							}

@@ -248,10 +248,10 @@ audioinput._handleInputParameters = function (cfg) {
     audioinput._cfg.concatenateMaxChunks = cfg.concatenateMaxChunks || audioinput.DEFAULT.CONCATENATE_MAX_CHUNKS;
     audioinput._cfg.audioSourceType = cfg.audioSourceType || 0;
     audioinput._cfg.fileUrl = cfg.fileUrl || null;
-    audioinput._cfg.debug = typeof cfg.normalize === 'boolean' ? cfg.debug : audioinput.DEFAULT.DEBUG;
+    audioinput._cfg.debug = typeof cfg.debug === 'boolean' ? cfg.debug : audioinput.DEFAULT.DEBUG;
     audioinput._onErrorCallback = typeof cfg.onError === 'function' ? cfg.onError : undefined;
 
-    if (isNaN(audioinput._cfg.channels) || (audioinput._cfg.channels < 1 && audioinput._cfg.channels > 2)) {
+    if (isNaN(audioinput._cfg.channels) || (audioinput._cfg.channels < 1 || audioinput._cfg.channels > 2)) {
         throw "Invalid number of channels (" + audioinput._cfg.channels + "). Only mono (1) and stereo (2) is" +
         " supported.";
     }
@@ -274,6 +274,22 @@ audioinput._handleInputParameters = function (cfg) {
 };
 
 /**
+ * Decode Base64 string to Int16Array
+ * @param {string} base64 - Base64 encoded string
+ * @returns {Int16Array}
+ * @private
+ */
+audioinput._decodeBase64ToInt16 = function (base64) {
+    var binaryString = window.atob(base64);
+    var len = binaryString.length;
+    var bytes = new Uint8Array(len);
+    for (var i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    return new Int16Array(bytes.buffer);
+};
+
+/**
  * Callback for audio input
  *
  * @param {Object} audioInputData     keys: data (PCM)
@@ -286,7 +302,16 @@ audioinput._audioInputEvent = function (audioInputData) {
         }
 
         if (audioInputData.data && audioInputData.data.length > 0) {
-            var audioData = audioinput._normalizeAudio(JSON.parse(audioInputData.data));
+            var rawData;
+            // Check if data is Base64 encoded (from Android with optimization) or JSON array
+            if (audioInputData.data.charAt(0) !== '[') {
+                // Base64 encoded data from Android
+                rawData = audioinput._decodeBase64ToInt16(audioInputData.data);
+            } else {
+                // JSON array format from iOS/browser
+                rawData = JSON.parse(audioInputData.data);
+            }
+            var audioData = audioinput._normalizeAudio(rawData);
 
             if (audioinput._cfg.streamToWebAudio && audioinput._capturing) {
                 audioinput._enqueueAudioData(audioData);
@@ -431,6 +456,8 @@ audioinput._playAudio = function (data) {
 
             if (audioinput._cfg.channels > 1) {
                 for (var i = 0; i < audioinput._cfg.channels; i++) {
+                    chdata = [];
+                    index = 0;
                     while (index < data.length) {
                         chdata.push(data[index + i]);
                         index += parseInt(audioinput._cfg.channels);

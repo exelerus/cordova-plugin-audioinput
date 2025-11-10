@@ -24,7 +24,7 @@ DEALINGS IN THE SOFTWARE.
 function initialize(success, error, opts) {
     console.log("AudioInputCaptureProxy: initialize: " + JSON.stringify(opts));
     onInitialized = success;
-    if (!intialized) {
+    if (!initialized) {
         sampleRate = opts[0] || sampleRate;
         bufferSize = opts[1] || bufferSize;
         channels = opts[2] || channels;
@@ -47,7 +47,7 @@ function initialize(success, error, opts) {
                             function (fs) {
                                 console.log("AudioInputCaptureProxy: Got file system: " + fs.name);
                                 fileSystem = fs;
-                                intialized = true;
+                                initialized = true;
                                 onInitialized();
                             }, error);
                     }, error);
@@ -60,13 +60,13 @@ function initialize(success, error, opts) {
                     function (fs) {
                         console.log("AudioInputCaptureProxy: Got file system: " + fs.name);
                         fileSystem = fs;
-                        intialized = true;
+                        initialized = true;
                         onInitialized();
                     }, error);
             }
             return;
         } // fileUrl set
-        intialized = true;
+        initialized = true;
     } // !initialized
     onInitialized();
 }
@@ -123,7 +123,7 @@ var channels = 1;
 var format = null;
 var audioSourceType = null;
 var fileUrl = null;
-var intialized = false;
+var initialized = false;
 var microphonePermission = false;
 var audioContext = null;
 var onInitialized = null;
@@ -170,7 +170,7 @@ function gotStream(stream) {
     // Create an AudioNode from the stream.
     audioStream = stream;
     realAudioInput = audioContext.createMediaStreamSource(stream);
-    if (channels = 1) {
+    if (channels == 1) {
         audioInput = convertToMono(realAudioInput);
     }
     else {
@@ -182,7 +182,6 @@ function gotStream(stream) {
     if (sampleRate < audioContext.sampleRate) {
         var lowPassFilter = audioContext.createBiquadFilter();
         audioInput.connect(lowPassFilter);
-        lowPassFilter.connect(inputPoint);
         lowPassFilter.type = lowPassFilter.LOWPASS || "lowpass";
         lowPassFilter.frequency.value = sampleRate / 2;
         lowPassFilter.connect(inputPoint);
