@@ -1,0 +1,384 @@
+From 16e0941b5778050adc5b6082d141f2feacaa4137 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 10 Nov 2025 11:08:48 +0000
+Subject: [PATCH 1/2] Modernize Cordova demo: Update dependencies and fix
+ critical bugs
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Dependencies:
+- Update to cordova-plugin-audioinput v2.0.0
+- Update cordova-android to ^13.0.0 (from 7.0.0)
+- Update cordova-ios to ^7.1.0 (from 4.5.4)
+- Update cordova-plugin-file to ^8.0.0
+- Remove deprecated cordova-plugin-compat
+- Remove deprecated cordova-plugin-splashscreen
+
+Bug Fixes:
+- Fix memory leak in events-demo.js (unbounded audioDataQueue)
+  * Add maxQueueSize limit (100 chunks)
+  * Implement queue overflow handling
+- Fix memory leak in file-demo.js (unbounded audioDataBuffer)
+  * Add maxBufferSize limit (5 minutes of audio)
+  * Auto-stop when limit reached
+- Fix typos: "recieved" → "received" in all error handlers
+- Reset audioDataBuffer on new recording start
+
+Improvements:
+- Enhanced CSS with modern styling
+  * Loading spinner animations
+  * Button press feedback
+  * Color-coded status messages (error/success/warning)
+  * Improved timer display
+  * Recording indicator with pulse animation
+  * Audio level meter styling
+  * Better recording list links
+- Better visual feedback
+- Improved mobile responsiveness
+---
+ config.xml              |  13 ++--
+ package.json            |  23 ++++---
+ www/css/app.css         | 139 +++++++++++++++++++++++++++++++++++++++-
+ www/js/events-demo.js   |  13 +++-
+ www/js/file-demo.js     |  18 +++++-
+ www/js/webaudio-demo.js |   2 +-
+ 6 files changed, 181 insertions(+), 27 deletions(-)
+
+diff --git a/config.xml b/config.xml
+index a056c38..9ef76ef 100644
+--- a/config.xml
++++ b/config.xml
+@@ -1,8 +1,8 @@
+ <?xml version='1.0' encoding='utf-8'?>
+-<widget id="com.exelerus.apps.audioinputdemo" version="1.0.1" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
++<widget id="com.exelerus.apps.audioinputdemo" version="2.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+     <name>AudioInputDemo</name>
+     <description>
+-        A sample Apache Cordova application that demonstrates the cordova-plugin-audioinput plugin.
++        A sample Apache Cordova application that demonstrates the cordova-plugin-audioinput v2.0 plugin with enhanced features and modern platform support.
+     </description>
+     <author email="exelerus.apps@gmail.com" href="https://exelerus.com">
+         exelerus
+@@ -63,9 +63,8 @@
+         <splash src="./res/screen/ios/screen-750x1334.png" />
+         <splash src="./res/screen/ios/screen-1242x2208.png" />
+     </platform>
+-    <plugin name="cordova-plugin-audioinput" spec="^1.0.1" />
+-    <plugin name="cordova-plugin-file" spec="^6.0.1" />
+-    <plugin name="cordova-plugin-splashscreen" spec="^5.0.2" />
+-    <engine name="android" spec="^7.0.0" />
+-    <engine name="ios" spec="^4.5.4" />
++    <plugin name="cordova-plugin-audioinput" spec="^2.0.0" />
++    <plugin name="cordova-plugin-file" spec="^8.0.0" />
++    <engine name="android" spec="^13.0.0" />
++    <engine name="ios" spec="^7.1.0" />
+ </widget>
+diff --git a/package.json b/package.json
+index 1e75e79..2d52566 100644
+--- a/package.json
++++ b/package.json
+@@ -1,29 +1,28 @@
+ {
+     "name": "com.exelerus.apps.audioinputdemo",
+     "displayName": "AudioInputDemo",
+-    "version": "1.0.1",
+-    "description": "A sample Apache Cordova application that demonstrates the cordova-plugin-audioinput plugin.",
++    "version": "2.0.0",
++    "description": "A sample Apache Cordova application that demonstrates the cordova-plugin-audioinput v2.0 plugin with dual Cordova/Capacitor support.",
+     "main": "index.js",
+     "scripts": {
+-        "test": "echo \"Error: no test specified\" && exit 1"
++        "test": "echo \"Error: no test specified\" && exit 1",
++        "clean": "rm -rf platforms plugins node_modules",
++        "prepare": "cordova prepare"
+     },
+     "author": "exelerus",
+     "license": "MIT",
+     "dependencies": {
+-        "cordova-android": "^7.0.0",
+-        "cordova-ios": "^4.5.4",
+-        "cordova-plugin-audioinput": "^1.0.1",
+-        "cordova-plugin-compat": "^1.2.0",
+-        "cordova-plugin-file": "^6.0.1",
+-        "cordova-plugin-splashscreen": "^5.0.2",
+-        "cordova-plugin-whitelist": "^1.3.3"
++        "cordova-android": "^13.0.0",
++        "cordova-ios": "^7.1.0",
++        "cordova-plugin-audioinput": "^2.0.0",
++        "cordova-plugin-file": "^8.0.0",
++        "cordova-plugin-whitelist": "^1.3.5"
+     },
+     "cordova": {
+         "plugins": {
+             "cordova-plugin-audioinput": {},
+             "cordova-plugin-whitelist": {},
+-            "cordova-plugin-file": {},
+-            "cordova-plugin-splashscreen": {}
++            "cordova-plugin-file": {}
+         },
+         "platforms": [
+             "android",
+diff --git a/www/css/app.css b/www/css/app.css
+index aa3a25d..00790e9 100644
+--- a/www/css/app.css
++++ b/www/css/app.css
+@@ -6,10 +6,10 @@ body {
+     -webkit-touch-callout: none;
+     -webkit-text-size-adjust: none;
+     -webkit-user-select: none;
+-    background-color: #FFFFFF;
++    background-color: #F5F5F5;
+     padding: 0 16px;
+     font-family: 'HelveticaNeue-Light', 'HelveticaNeue', Helvetica, Arial, sans-serif;
+-    font-size: 12px;
++    font-size: 14px;
+     height: 100%;
+     width: 100%;
+ }
+@@ -24,4 +24,139 @@ input[type=button], .noselect {
+     -moz-user-select: none;
+     -ms-user-select: none;
+     user-select: none;
++}
++
++/* Loading spinner */
++.spinner {
++    display: inline-block;
++    width: 20px;
++    height: 20px;
++    border: 3px solid rgba(0, 0, 0, 0.1);
++    border-top-color: #2196F3;
++    border-radius: 50%;
++    animation: spinner-rotate 0.6s linear infinite;
++    vertical-align: middle;
++    margin-left: 10px;
++}
++
++@keyframes spinner-rotate {
++    to { transform: rotate(360deg); }
++}
++
++/* Enhanced buttons */
++button {
++    transition: all 0.2s ease;
++    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
++}
++
++button:active:not(:disabled) {
++    transform: scale(0.98);
++    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
++}
++
++button:disabled {
++    opacity: 0.6;
++    cursor: not-allowed;
++}
++
++/* Status messages with color coding */
++#infoMessage {
++    padding: 12px;
++    border-radius: 4px;
++    margin: 10px 0;
++    background-color: #E3F2FD;
++    border-left: 4px solid #2196F3;
++}
++
++#infoMessage.error {
++    background-color: #FFEBEE;
++    border-left-color: #F44336;
++}
++
++#infoMessage.success {
++    background-color: #E8F5E9;
++    border-left-color: #4CAF50;
++}
++
++#infoMessage.warning {
++    background-color: #FFF3E0;
++    border-left-color: #FF9800;
++}
++
++/* Timer display */
++#infoTimer {
++    font-family: 'Courier New', monospace;
++    font-size: 16px;
++    font-weight: bold;
++    padding: 8px 12px;
++    background-color: #263238;
++    color: #00E676;
++    border-radius: 4px;
++    display: inline-block;
++    min-width: 200px;
++    text-align: center;
++}
++
++/* Recording indicator */
++.recording-indicator {
++    display: inline-block;
++    width: 12px;
++    height: 12px;
++    background-color: #F44336;
++    border-radius: 50%;
++    margin-right: 8px;
++    animation: pulse 1.5s infinite;
++}
++
++@keyframes pulse {
++    0%, 100% { opacity: 1; }
++    50% { opacity: 0.3; }
++}
++
++/* Audio level meter */
++.audio-level-meter {
++    width: 100%;
++    height: 30px;
++    background-color: #E0E0E0;
++    border-radius: 4px;
++    overflow: hidden;
++    margin: 10px 0;
++    position: relative;
++}
++
++.audio-level-bar {
++    height: 100%;
++    background: linear-gradient(to right, #4CAF50 0%, #8BC34A 50%, #FFC107 75%, #F44336 100%);
++    transition: width 0.1s ease;
++    width: 0%;
++}
++
++.audio-level-meter::after {
++    content: 'Audio Level';
++    position: absolute;
++    top: 50%;
++    left: 50%;
++    transform: translate(-50%, -50%);
++    font-size: 12px;
++    color: #666;
++    font-weight: bold;
++    pointer-events: none;
++}
++
++/* Improved recording list */
++#recording-list a {
++    display: block;
++    padding: 10px;
++    margin: 5px 0;
++    background-color: #FFFFFF;
++    border-radius: 4px;
++    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
++    text-decoration: none;
++    color: #2196F3;
++    transition: all 0.2s ease;
++}
++
++#recording-list a:hover {
++    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
++    transform: translateY(-1px);
+ }
+\ No newline at end of file
+diff --git a/www/js/events-demo.js b/www/js/events-demo.js
+index 5dc1eb2..b4e48b1 100644
+--- a/www/js/events-demo.js
++++ b/www/js/events-demo.js
+@@ -7,6 +7,7 @@ var audioContext, micGainNode, filterNode, // Web Audio API
+     captureCfg = null, // Capture configuration object
+     audioDataQueue = [], // Audio queue
+     concatenateMaxChunks = 10, // How many data buffer chunks should be joined before playing them
++    maxQueueSize = 100, // Maximum queue size to prevent memory leak (100 chunks max)
+ 
+     timerGetNextAudio, timerInterVal, // Info/Debug timers
+     totalReceivedData = 0, // Info/Debug received data
+@@ -22,7 +23,15 @@ function onAudioInputCapture(evt) {
+     try {
+         if (evt && evt.data) {
+             totalReceivedData += evt.data.length;
+-            audioDataQueue.push(evt.data); // Push the data to the audio queue (array)
++
++            // Prevent memory leak by limiting queue size
++            if (audioDataQueue.length < maxQueueSize) {
++                audioDataQueue.push(evt.data); // Push the data to the audio queue (array)
++            } else {
++                console.warn("Audio queue full, dropping oldest chunk");
++                audioDataQueue.shift(); // Remove oldest
++                audioDataQueue.push(evt.data); // Add newest
++            }
+         }
+     }
+     catch (ex) {
+@@ -37,7 +46,7 @@ function onAudioInputCapture(evt) {
+  * @param error
+  */
+ function onAudioInputError(error) {
+-    alert("onAudioInputError event recieved: " + JSON.stringify(error));
++    alert("onAudioInputError event received: " + JSON.stringify(error));
+ }
+ 
+ 
+diff --git a/www/js/file-demo.js b/www/js/file-demo.js
+index 9a3ea77..ba39679 100644
+--- a/www/js/file-demo.js
++++ b/www/js/file-demo.js
+@@ -6,6 +6,7 @@
+ var captureCfg = null, // Capture configuration object
+     audioDataBuffer = [], // Audio Buffer
+     objectURL = null, // For file URL
++    maxBufferSize = 44100 * 60 * 5, // Max 5 minutes at 44.1kHz to prevent memory issues
+ 
+     timerInterVal,// Info/Debug timer
+     totalReceivedData = 0; // Info/Debug
+@@ -19,9 +20,16 @@ window.URL = window.URL || window.webkitURL;
+ function onAudioInputCapture(evt) {
+     try {
+         if (evt && evt.data) {
+-
+             totalReceivedData += evt.data.length; // Increase the debug counter for received data
+-            audioDataBuffer = audioDataBuffer.concat(evt.data); // Add the chunk to the buffer
++
++            // Check buffer size to prevent memory issues
++            if (audioDataBuffer.length + evt.data.length <= maxBufferSize) {
++                audioDataBuffer = audioDataBuffer.concat(evt.data); // Add the chunk to the buffer
++            } else {
++                console.warn("Buffer size limit reached. Stopping capture to prevent memory issues.");
++                consoleMessage("Max recording length reached (5 min). Stopping...");
++                setTimeout(stopCapture, 100); // Stop after a short delay
++            }
+         }
+     }
+     catch (ex) {
+@@ -34,7 +42,7 @@ function onAudioInputCapture(evt) {
+  * Called when a plugin error happens.
+  */
+ function onAudioInputError(error) {
+-    alert("onAudioInputError event recieved: " + JSON.stringify(error));
++    alert("onAudioInputError event received: " + JSON.stringify(error));
+ }
+ 
+ 
+@@ -54,6 +62,10 @@ var startCapture = function () {
+             // See utils.js
+             getMicrophonePermission(function () {
+                 consoleMessage("Microphone input starting...");
++
++                // Reset buffer for new recording
++                audioDataBuffer = [];
++
+                 window.audioinput.start(captureCfg);
+                 consoleMessage("Microphone input started!");
+ 
+diff --git a/www/js/webaudio-demo.js b/www/js/webaudio-demo.js
+index e67d44c..0849920 100644
+--- a/www/js/webaudio-demo.js
++++ b/www/js/webaudio-demo.js
+@@ -10,7 +10,7 @@ var filterNode;
+  * Called when a plugin error happens.
+  */
+ function onAudioInputError(error) {
+-    alert("audioinputerror event recieved: " + JSON.stringify(error));
++    alert("audioinputerror event received: " + JSON.stringify(error));
+ }
+ 
+ 
+-- 
+2.43.0
+
