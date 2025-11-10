@@ -60,6 +60,22 @@ public class AudioInputReceiver extends Thread {
 	private Bundle messageBundle = new Bundle();
 	private URI fileUrl;
 
+	/**
+	 * Reusable buffers to reduce heap allocations and GC pressure.
+	 *
+	 * These buffers are allocated once in the constructor and reused throughout
+	 * the recording session:
+	 * - audioBuffer: Receives PCM data from AudioRecord for streaming mode
+	 * - byteBuffer: Converts short[] to byte[] for Base64 encoding (streaming)
+	 * - fileAudioBuffer: Receives PCM data for file recording mode
+	 *
+	 * Bundle is also reused via clear() instead of new Bundle() to reduce allocations.
+	 * This optimization reduces GC pauses during real-time audio capture.
+	 */
+	private ByteBuffer byteBuffer;
+	private short[] audioBuffer;
+	private byte[] fileAudioBuffer;
+
 	public AudioInputReceiver() {
 		recorder = new AudioRecord(MediaRecorder.AudioSource.DEFAULT, sampleRateInHz, channelConfig, audioFormat, minBufferSize * RECORDING_BUFFER_FACTOR);
 	}
@@ -99,6 +115,12 @@ public class AudioInputReceiver extends Thread {
 
 		recorder = new AudioRecord(audioSource, sampleRateInHz, channelConfig, audioFormat, recordingBufferSize);
 		this.fileUrl = fileUrl;
+
+		// Pre-allocate reusable buffers to reduce GC pressure
+		this.audioBuffer = new short[readBufferSize];
+		this.byteBuffer = ByteBuffer.allocate(readBufferSize * 2);
+		this.byteBuffer.order(ByteOrder.LITTLE_ENDIAN);
+		this.fileAudioBuffer = new byte[readBufferSize];
 	}
 
 	public void setHandler(Handler handler) {
@@ -113,7 +135,6 @@ public class AudioInputReceiver extends Thread {
 			//
 
 			int numReadBytes = 0;
-			short audioBuffer[] = new short[readBufferSize];
 			synchronized(this) {
 			    recorder.startRecording();
 
@@ -124,25 +145,25 @@ public class AudioInputReceiver extends Thread {
 
 						if (numReadBytes > 0) {
 							try {
-								// Convert short array to byte array using ByteBuffer
-								ByteBuffer byteBuffer = ByteBuffer.allocate(numReadBytes * 2);
-								byteBuffer.order(ByteOrder.LITTLE_ENDIAN);
+								// Reuse ByteBuffer to reduce allocations
+								byteBuffer.clear();
 								for (int i = 0; i < numReadBytes; i++) {
 									byteBuffer.putShort(audioBuffer[i]);
 								}
 
-								// Encode to Base64
-								String encoded = Base64.encodeToString(byteBuffer.array(), Base64.NO_WRAP);
+								// Encode to Base64 - only encode the used portion
+								String encoded = Base64.encodeToString(byteBuffer.array(), 0, numReadBytes * 2, Base64.NO_WRAP);
 
+								// Reuse message and bundle to reduce allocations
 								message = handler.obtainMessage();
-								messageBundle = new Bundle();
+								messageBundle.clear();
 								messageBundle.putString("data", encoded);
 								message.setData(messageBundle);
 								handler.sendMessage(message);
 							}
 							catch(Exception ex) {
 								message = handler.obtainMessage();
-								messageBundle = new Bundle();
+								messageBundle.clear();
 								messageBundle.putString("error", ex.toString());
 								message.setData(messageBundle);
 								handler.sendMessage(message);
@@ -157,7 +178,7 @@ public class AudioInputReceiver extends Thread {
 				catch(Exception ex)
 				{
 					message = handler.obtainMessage();
-					messageBundle = new Bundle();
+					messageBundle.clear();
 					messageBundle.putString("error", ex.toString());
 					message.setData(messageBundle);
 					handler.sendMessage(message);
@@ -172,7 +193,6 @@ public class AudioInputReceiver extends Thread {
 			// Recording to fileUrl
 			//
 			int numReadBytes = 0;
-			byte audioBuffer[] = new byte[readBufferSize];
 
 			synchronized(this) {
 				URI finalUrl = fileUrl; // Even if the member changes, we use what we were originally given
@@ -184,15 +204,15 @@ public class AudioInputReceiver extends Thread {
 					FileOutputStream os = new FileOutputStream(audioFile.getPath());
 
 					while (!isInterrupted()) {
-						numReadBytes = recorder.read(audioBuffer, 0, readBufferSize);
+						numReadBytes = recorder.read(fileAudioBuffer, 0, readBufferSize);
 
 						if (numReadBytes > 0) {
 							try {
-								os.write(audioBuffer, 0, numReadBytes);
+								os.write(fileAudioBuffer, 0, numReadBytes);
 							}
 							catch(Exception ex) {
 								message = handler.obtainMessage();
-								messageBundle = new Bundle();
+								messageBundle.clear();
 								messageBundle.putString("error", ex.toString());
 								message.setData(messageBundle);
 								handler.sendMessage(message);
@@ -206,7 +226,7 @@ public class AudioInputReceiver extends Thread {
 					audioFile.delete();
 
 					message = handler.obtainMessage();
-					messageBundle = new Bundle();
+					messageBundle.clear();
 					messageBundle.putString("file", wav.toURI().toString());
 					message.setData(messageBundle);
 					handler.sendMessage(message);
@@ -218,7 +238,7 @@ public class AudioInputReceiver extends Thread {
 				catch(Throwable ex)
 				{
 					message = handler.obtainMessage();
-					messageBundle = new Bundle();
+					messageBundle.clear();
 					messageBundle.putString("error", ex.toString());
 					message.setData(messageBundle);
 					handler.sendMessage(message);
