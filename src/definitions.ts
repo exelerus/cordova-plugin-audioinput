@@ -51,7 +51,7 @@ export interface AudioInputPlugin {
   addListener(
     eventName: 'audioData',
     listenerFunc: (event: AudioDataEvent) => void,
-  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  ): Promise<PluginListenerHandle>;
 
   /**
    * Add a listener for audio error events
@@ -63,7 +63,7 @@ export interface AudioInputPlugin {
   addListener(
     eventName: 'audioError',
     listenerFunc: (event: AudioErrorEvent) => void,
-  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  ): Promise<PluginListenerHandle>;
 
   /**
    * Add a listener for recording finished events (when recording to file)
@@ -75,7 +75,7 @@ export interface AudioInputPlugin {
   addListener(
     eventName: 'audioInputFinished',
     listenerFunc: (event: AudioFinishedEvent) => void,
-  ): Promise<PluginListenerHandle> & PluginListenerHandle;
+  ): Promise<PluginListenerHandle>;
 
   /**
    * Remove all listeners for this plugin
