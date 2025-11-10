@@ -162,6 +162,9 @@ audioinput.stop = function (onStopped) {
     if (audioinput._timerGetNextAudio) clearTimeout(audioinput._timerGetNextAudio);
     audioinput._audioDataQueue = null;
 
+    // Clear buffer pools to free memory
+    audioinput._clearBufferPools();
+
     if (!audioinput._cfg.streamToWebAudio) return;
 
     if (!audioinput._micGainNode) return;
@@ -230,6 +233,76 @@ audioinput._webAudioAPISupported = false;
 audioinput._onErrorCallback = undefined;
 
 /**
+ * Buffer pooling for reduced heap allocations
+ *
+ * The plugin maintains pools of reusable typed arrays (Float32Array and Int16Array)
+ * to minimize garbage collection pressure during audio capture. Buffers are:
+ * - Acquired from the pool when needed (or created if pool is empty)
+ * - Returned to the pool after use (up to maxPoolSize limit)
+ * - Cleared when audio capture stops to free memory
+ *
+ * This optimization significantly reduces allocations during real-time audio processing,
+ * especially important for the concatenation step in streamToWebAudio mode.
+ */
+audioinput._bufferPool = {
+    float32: [],
+    int16: [],
+    maxPoolSize: 10
+};
+
+/**
+ * Get a buffer from the pool or create a new one
+ * @param {string} type - 'float32' or 'int16'
+ * @param {number} size - Size of the buffer
+ * @returns {Float32Array|Int16Array}
+ * @private
+ */
+audioinput._getPooledBuffer = function (type, size) {
+    var pool = audioinput._bufferPool[type];
+
+    // Try to find a buffer of the right size
+    for (var i = 0; i < pool.length; i++) {
+        if (pool[i].length === size) {
+            return pool.splice(i, 1)[0];
+        }
+    }
+
+    // Try to find a larger buffer we can slice
+    for (var i = 0; i < pool.length; i++) {
+        if (pool[i].length >= size) {
+            var buffer = pool.splice(i, 1)[0];
+            return buffer.subarray(0, size);
+        }
+    }
+
+    // No suitable buffer found, create new one
+    return type === 'float32' ? new Float32Array(size) : new Int16Array(size);
+};
+
+/**
+ * Return a buffer to the pool for reuse
+ * @param {string} type - 'float32' or 'int16'
+ * @param {Float32Array|Int16Array} buffer
+ * @private
+ */
+audioinput._releaseBuffer = function (type, buffer) {
+    var pool = audioinput._bufferPool[type];
+
+    if (pool.length < audioinput._bufferPool.maxPoolSize) {
+        pool.push(buffer);
+    }
+};
+
+/**
+ * Clear all buffer pools
+ * @private
+ */
+audioinput._clearBufferPools = function () {
+    audioinput._bufferPool.float32 = [];
+    audioinput._bufferPool.int16 = [];
+};
+
+/**
  *
  * @param cfg
  */
@@ -248,10 +321,10 @@ audioinput._handleInputParameters = function (cfg) {
     audioinput._cfg.concatenateMaxChunks = cfg.concatenateMaxChunks || audioinput.DEFAULT.CONCATENATE_MAX_CHUNKS;
     audioinput._cfg.audioSourceType = cfg.audioSourceType || 0;
     audioinput._cfg.fileUrl = cfg.fileUrl || null;
-    audioinput._cfg.debug = typeof cfg.normalize === 'boolean' ? cfg.debug : audioinput.DEFAULT.DEBUG;
+    audioinput._cfg.debug = typeof cfg.debug === 'boolean' ? cfg.debug : audioinput.DEFAULT.DEBUG;
     audioinput._onErrorCallback = typeof cfg.onError === 'function' ? cfg.onError : undefined;
 
-    if (isNaN(audioinput._cfg.channels) || (audioinput._cfg.channels < 1 && audioinput._cfg.channels > 2)) {
+    if (isNaN(audioinput._cfg.channels) || (audioinput._cfg.channels < 1 || audioinput._cfg.channels > 2)) {
         throw "Invalid number of channels (" + audioinput._cfg.channels + "). Only mono (1) and stereo (2) is" +
         " supported.";
     }
@@ -274,6 +347,22 @@ audioinput._handleInputParameters = function (cfg) {
 };
 
 /**
+ * Decode Base64 string to Int16Array
+ * @param {string} base64 - Base64 encoded string
+ * @returns {Int16Array}
+ * @private
+ */
+audioinput._decodeBase64ToInt16 = function (base64) {
+    var binaryString = window.atob(base64);
+    var len = binaryString.length;
+    var bytes = new Uint8Array(len);
+    for (var i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    return new Int16Array(bytes.buffer);
+};
+
+/**
  * Callback for audio input
  *
  * @param {Object} audioInputData     keys: data (PCM)
@@ -286,7 +375,16 @@ audioinput._audioInputEvent = function (audioInputData) {
         }
 
         if (audioInputData.data && audioInputData.data.length > 0) {
-            var audioData = audioinput._normalizeAudio(JSON.parse(audioInputData.data));
+            var rawData;
+            // Check if data is Base64 encoded (from Android with optimization) or JSON array
+            if (audioInputData.data.charAt(0) !== '[') {
+                // Base64 encoded data from Android
+                rawData = audioinput._decodeBase64ToInt16(audioInputData.data);
+            } else {
+                // JSON array format from iOS/browser
+                rawData = JSON.parse(audioInputData.data);
+            }
+            var audioData = audioinput._normalizeAudio(rawData);
 
             if (audioinput._cfg.streamToWebAudio && audioinput._capturing) {
                 audioinput._enqueueAudioData(audioData);
@@ -344,16 +442,34 @@ audioinput._audioInputDebugEvent = function (debugMessage) {
 
 /**
  * Returns a typed array, normalizing if needed
- * @param {number[]} pcmData - Array of short integers which came from the plugin
+ * @param {number[]|Int16Array} pcmData - Array of short integers which came from the plugin
  */
 audioinput._normalizeToTyped = function (pcmData) {
-    if (!audioinput._cfg.normalize) return Int16Array.from(pcmData);
+    // If not normalizing and data is already Int16Array, return as-is
+    if (!audioinput._cfg.normalize) {
+        if (pcmData instanceof Int16Array) {
+            return pcmData;
+        }
+        return Int16Array.from(pcmData);
+    }
 
-    var out = Float32Array.from(pcmData, function (i) {
-        return audioinput._parseAsFloat(i) / audioinput._cfg.normalizationFactor;
-    });
+    // Normalize: use pooled buffer for better performance
+    var length = pcmData.length;
+    var out = audioinput._getPooledBuffer('float32', length);
 
-    if (isNaN(out[out.length - 1])) out.pop(); // If last value is NaN, remove it.
+    for (var i = 0; i < length; i++) {
+        out[i] = audioinput._parseAsFloat(pcmData[i]) / audioinput._cfg.normalizationFactor;
+    }
+
+    // If last value is NaN, create a smaller buffer without it
+    if (isNaN(out[length - 1])) {
+        var trimmed = audioinput._getPooledBuffer('float32', length - 1);
+        for (var i = 0; i < length - 1; i++) {
+            trimmed[i] = out[i];
+        }
+        audioinput._releaseBuffer('float32', out);
+        return trimmed;
+    }
 
     return out;
 }
@@ -402,13 +518,30 @@ audioinput._getNextToPlay = function () {
             return;
         }
 
-        var concatenatedData = [];
+        // Collect chunks without concatenation to determine total length
+        var chunks = [];
+        var totalLength = 0;
         for (var i = 0; i < audioinput._cfg.concatenateMaxChunks; i++) {
             if (audioinput._audioDataQueue.length === 0) break;
-            concatenatedData = concatenatedData.concat(audioinput._dequeueAudioData());
+            var chunk = audioinput._dequeueAudioData();
+            chunks.push(chunk);
+            totalLength += chunk.length;
         }
+
+        // Use pooled buffer for concatenation
+        var bufferType = audioinput._cfg.normalize ? 'float32' : 'int16';
+        var concatenatedData = audioinput._getPooledBuffer(bufferType, totalLength);
+        var offset = 0;
+        for (var i = 0; i < chunks.length; i++) {
+            concatenatedData.set(chunks[i], offset);
+            offset += chunks[i].length;
+        }
+
         audioinput._timerGetNextAudio = setTimeout(audioinput._getNextToPlay,
             audioinput._playAudio(concatenatedData) * 1000);
+
+        // Release the buffer after playing (playAudio is synchronous for buffer creation)
+        audioinput._releaseBuffer(bufferType, concatenatedData);
 
     } catch (ex) {
         audioinput._audioInputErrorEvent("audioinput._getNextToPlay ex: " + ex);
@@ -431,6 +564,8 @@ audioinput._playAudio = function (data) {
 
             if (audioinput._cfg.channels > 1) {
                 for (var i = 0; i < audioinput._cfg.channels; i++) {
+                    chdata = [];
+                    index = 0;
                     while (index < data.length) {
                         chdata.push(data[index + i]);
                         index += parseInt(audioinput._cfg.channels);

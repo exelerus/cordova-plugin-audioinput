@@ -240,8 +240,9 @@ void HandleInputBuffer(void* inUserData,
     Deallocate audio queue
  */
 - (void)dealloc {
-  if (_fileUrl == nil) {
+  if (_recordState.mQueue != NULL) {
     AudioQueueDispose(_recordState.mQueue, true);
+    _recordState.mQueue = NULL;
   }
 }
 

@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "module": "ES2015",
+    "moduleResolution": "node",
+    "target": "ES2017",
+    "declaration": true,
+    "declarationMap": true,
+    "outDir": "./dist/esm",
+    "lib": [
+      "ES2017",
+      "DOM"
+    ],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  },
+  "files": [
+    "src/index.ts"
+  ],
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

@@ -1,11 +1,53 @@
-/*
-!/www
-!/demo
-!/src
-!/test-apps
-!/README.md
-!/LICENSE
-!/package.json
-!/.gitignore
-!/plugin.xml
-!/index.d.ts
+# Build outputs
+/dist
+node_modules/
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Android
+*.iml
+.gradle/
+/android/build/
+/android/.cxx/
+local.properties
+
+# iOS
+*.xcworkspace
+xcuserdata/
+DerivedData/
+Pods/
+Podfile.lock
+*.hmap
+
+# Capacitor
+.capacitor/
+
+# Keep these
+!www/
+!demo/
+!src/
+!test-apps/
+!android/
+!ios/
+!README.md
+!LICENSE
+!CHANGELOG.md
+!package.json
+!.gitignore
+!plugin.xml
+!index.d.ts
+!tsconfig.json
+!rollup.config.js
+!AudioInput.podspec
+!CODE_OF_CONDUCT.md
+!.github/
