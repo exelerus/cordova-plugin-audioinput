@@ -51,3 +51,4 @@ Podfile.lock
 !AudioInput.podspec
 !CODE_OF_CONDUCT.md
 !.github/
+package-lock.json
