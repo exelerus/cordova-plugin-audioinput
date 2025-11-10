@@ -24,24 +24,27 @@ This is a minimal Capacitor app for testing the cordova-plugin-audioinput on rea
    npx cap add ios
    ```
 
-3. **Install the plugin from your branch:**
+3. **Install the plugin:**
 
-   You have two options:
-
-   **Option A: Add plugin to package.json (Recommended)**
+   **Option A: From GitHub (published plugin)**
    ```bash
-   npm install https://github.com/exelerus/cordova-plugin-audioinput.git#claude/analyze-plugin-capacitor-011CUyE1dcag6xBDyjquHEBY
+   npm install https://github.com/exelerus/cordova-plugin-audioinput.git#BRANCH_NAME
    npx cap sync
    ```
 
-   **Option B: Manually add to native project**
+   **Option B: From Local Plugin (for testing local changes)**
    ```bash
-   # Navigate to android folder and add to build.gradle, or
-   # Use Capacitor's plugin installation
-   npx cap sync
+   # First, build the plugin from the plugin root directory
+   cd ../..
+   npm install
+   npm run build
+
+   # Then install it in the test app
+   cd test-apps/capacitor-test-app
+   npm install ../..
    ```
 
-   **Note:** To test a different branch, just change the branch name after the `#` symbol.
+   **Note:** To test a different branch, replace BRANCH_NAME with your actual branch name.
 
 4. **Build the web assets:**
    ```bash
@@ -146,13 +149,26 @@ To test changes to the plugin:
 
 If you want to test local changes to the plugin without pushing to GitHub:
 
-1. **In the plugin directory, create a tarball:**
+1. **Build the plugin first:**
    ```bash
+   cd /path/to/cordova-plugin-audioinput
+   npm install
+   npm run build
+   ```
+
+2. **Create a tarball (optional) or install directly:**
+   ```bash
+   # Option A: Install directly from parent directory
+   cd test-apps/capacitor-test-app
+   npm uninstall cordova-plugin-audioinput
+   npm install ../..
+
+   # Option B: Create and install tarball
    cd /path/to/cordova-plugin-audioinput
    npm pack
    ```
 
-2. **In the test app, install the local tarball:**
+3. **In the test app, install the local tarball (if using Option B):**
    ```bash
    npm install /path/to/cordova-plugin-audioinput-1.0.3.tgz
    npx cap sync
