@@ -52,3 +52,10 @@ Podfile.lock
 !CODE_OF_CONDUCT.md
 !.github/
 package-lock.json
+
+# Private dev files
+.private/
+
+# Claude Code rig
+CLAUDE.md
+.claude-rig
